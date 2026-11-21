@@ -1,0 +1,65 @@
+name: Release
+
+# Kad gurnes tag "v*" (npr. v1.0.0), GitHub build-uje self-contained aplikaciju,
+# spakuje instalater kroz Inno Setup (installer/UltraIDevice.iss) i zakaci
+# UltraIDevice-Setup.exe na GitHub release. Isti princip kao kod ostalih Ultra
+# aplikacija. Moze i rucno: Actions > Release > Run workflow (upisi tag).
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to build and release (e.g. v1.0.0)"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Work out version from tag
+        id: ver
+        shell: bash
+        run: |
+          TAG="${{ github.event.inputs.tag }}"
+          if [ -z "$TAG" ]; then TAG="${GITHUB_REF_NAME}"; fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Publish (self-contained, single file)
+        run: >
+          dotnet publish UltraIDevice.csproj
+          -c Release -r win-x64 --self-contained true
+          -p:PublishSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:Version=${{ steps.ver.outputs.version }}
+          -o publish
+
+      - name: Build installer (Inno Setup)
+        uses: Minionguyjpro/Inno-Setup-Action@v1.2.5
+        with:
+          path: installer/UltraIDevice.iss
+          options: /DMyAppVersion=${{ steps.ver.outputs.version }}
+
+      - name: Attach installer to the release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          R: ${{ github.repository }}
+          TAG: ${{ steps.ver.outputs.tag }}
+        run: |
+          gh release view "$TAG" --repo "$R" >/dev/null 2>&1 \
+            || gh release create "$TAG" --repo "$R" --title "Ultra iDevice $TAG" --generate-notes
+          gh release upload "$TAG" "Output/UltraIDevice-Setup.exe" --clobber --repo "$R"

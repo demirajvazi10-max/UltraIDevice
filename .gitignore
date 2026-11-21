@@ -1,0 +1,14 @@
+## .NET / WPF
+bin/
+obj/
+*.user
+
+## Visual Studio
+.vs/
+
+## Runtime-downloaded device tools (auto-installed on first run, not committed)
+tools/
+
+## App output / publish
+publish/
+Output/

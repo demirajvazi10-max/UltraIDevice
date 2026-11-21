@@ -1,0 +1,82 @@
+name: Build device tools bundle
+
+# Sklapa Windows x64 bundle alata (libimobiledevice + idevicerestore) iz MSYS2
+# paketa i objavljuje ga na STALNI "tools-latest" release kao
+# "ultraidevice-tools-win-x64.zip". Aplikacija (Tools > Install device tools)
+# preuzima BAŠ taj fajl, pa posle prvog uspešnog pokretanja ovog workflow-a
+# auto-instalacija radi za sve korisnike, bez ičega ručnog.
+#
+# Pokreće se sam na svaki push na main, ili ručno
+# (Actions > Build device tools bundle > Run workflow).
+#
+# NAPOMENA: skupljanje DLL zavisnosti preko ntldd je "best effort" — ako neki
+# alat na čistom Windows-u javi da fali neka .dll, dodaj je u korak "Collect
+# binaries". Ovo je polazna tačka koju ćemo doterati po potrebi.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Set up MSYS2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            zip
+            mingw-w64-x86_64-ntldd
+            mingw-w64-x86_64-libplist
+            mingw-w64-x86_64-libimobiledevice-glue
+            mingw-w64-x86_64-libusbmuxd
+            mingw-w64-x86_64-libimobiledevice
+            mingw-w64-x86_64-libirecovery
+            mingw-w64-x86_64-libtatsu
+            mingw-w64-x86_64-idevicerestore
+
+      - name: Collect binaries and their DLL dependencies
+        shell: msys2 {0}
+        run: |
+          set -e
+          mkdir -p bundle
+          TOOLS="idevice_id ideviceinfo idevicerestore irecovery ideviceenterrecovery idevicebackup2"
+          for t in $TOOLS; do
+            p="/mingw64/bin/$t.exe"
+            if [ -f "$p" ]; then
+              cp "$p" bundle/
+              ntldd -R "$p" 2>/dev/null \
+                | grep -oiE '[a-z]?:?[\\/][^ ]*mingw64[\\/]bin[\\/][^ ]+\.dll' \
+                | tr '\\' '/' | sort -u \
+                | while read -r d; do [ -f "$d" ] && cp -u "$d" bundle/ || true; done
+            else
+              echo "MISSING TOOL: $t"
+            fi
+          done
+          echo "---- bundle contents ----"
+          ls -la bundle
+
+      - name: Zip bundle
+        shell: msys2 {0}
+        run: |
+          cd bundle
+          zip -r ../ultraidevice-tools-win-x64.zip .
+
+      - name: Publish to the tools-latest release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          R: ${{ github.repository }}
+        run: |
+          # Napravi "tools-latest" release ako ne postoji, pa zakači/osveži zip.
+          gh release view tools-latest --repo "$R" >/dev/null 2>&1 \
+            || gh release create tools-latest --repo "$R" --prerelease \
+                 --title "Device tools (auto-built)" \
+                 --notes "Auto-built libimobiledevice + idevicerestore Windows x64 bundle. Downloaded by the app's Tools > Install device tools."
+          gh release upload tools-latest ultraidevice-tools-win-x64.zip --clobber --repo "$R"

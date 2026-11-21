@@ -8,10 +8,6 @@ name: Build device tools bundle
 #
 # Pokreće se sam na svaki push na main, ili ručno
 # (Actions > Build device tools bundle > Run workflow).
-#
-# NAPOMENA: skupljanje DLL zavisnosti preko ntldd je "best effort" — ako neki
-# alat na čistom Windows-u javi da fali neka .dll, dodaj je u korak "Collect
-# binaries". Ovo je polazna tačka koju ćemo doterati po potrebi.
 
 on:
   push:
@@ -28,32 +24,29 @@ jobs:
       - name: Set up MSYS2
         uses: msys2/setup-msys2@v2
         with:
-          msystem: MINGW64
+          # UCRT64 je novi preporučeni MSYS2 environment (MINGW64 je deprecated).
+          msystem: UCRT64
           update: true
+          # Samo idevicerestore — pacman sam povuče sve zavisnosti
+          # (libimobiledevice sa alatima idevice_id/ideviceinfo/idevicebackup2/
+          #  ideviceenterrecovery, pa libirecovery sa irecovery, libplist...).
           install: >-
             zip
-            mingw-w64-x86_64-ntldd
-            mingw-w64-x86_64-libplist
-            mingw-w64-x86_64-libimobiledevice-glue
-            mingw-w64-x86_64-libusbmuxd
-            mingw-w64-x86_64-libimobiledevice
-            mingw-w64-x86_64-libirecovery
-            mingw-w64-x86_64-libtatsu
-            mingw-w64-x86_64-idevicerestore
+            mingw-w64-ucrt-x86_64-idevicerestore
 
       - name: Collect binaries and their DLL dependencies
         shell: msys2 {0}
         run: |
           set -e
           mkdir -p bundle
+          # $MINGW_PREFIX je /ucrt64 u ovom okruženju (ili /mingw64 u starom).
           TOOLS="idevice_id ideviceinfo idevicerestore irecovery ideviceenterrecovery idevicebackup2"
           for t in $TOOLS; do
-            p="/mingw64/bin/$t.exe"
+            p="$MINGW_PREFIX/bin/$t.exe"
             if [ -f "$p" ]; then
               cp "$p" bundle/
-              ntldd -R "$p" 2>/dev/null \
-                | grep -oiE '[a-z]?:?[\\/][^ ]*mingw64[\\/]bin[\\/][^ ]+\.dll' \
-                | tr '\\' '/' | sort -u \
+              # ldd daje pune putanje zavisnih DLL-ova; uzmemo one iz MSYS2 prefiksa.
+              ldd "$p" | awk -v pfx="$MINGW_PREFIX" '/=>/ && $3 ~ pfx {print $3}' | sort -u \
                 | while read -r d; do [ -f "$d" ] && cp -u "$d" bundle/ || true; done
             else
               echo "MISSING TOOL: $t"

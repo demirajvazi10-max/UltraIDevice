@@ -5,9 +5,10 @@ name: Build device tools bundle
 # "ultraidevice-tools-win-x64.zip". Aplikacija (Tools > Install device tools)
 # preuzima BAŠ taj fajl.
 #
-# Ova verzija je otporna na greške: instalacija paketa NE ruši build (svaki
-# paket zasebno, uz log), i u bundle UVEK ide build-info.txt sa dijagnostikom,
-# pa se tačno vidi šta je instalirano i gde je idevicerestore.exe.
+# NAPOMENA: UCRT64 varijanta paketa idevicerestore instalira zavisnosti ali NE
+# isporuči idevicerestore.exe (potvrđeno dijagnostikom). Zato koristimo MINGW64
+# okruženje. Ono je "deprecated" (samo upozorenje), ali ima kompletan paket.
+# Korak se ne ruši na grešku i uvek objavi bundle sa build-info.txt.
 
 on:
   push:
@@ -24,17 +25,16 @@ jobs:
       - name: Set up MSYS2
         uses: msys2/setup-msys2@v2
         with:
-          msystem: UCRT64
+          msystem: MINGW64
           update: true
+          # Potisni upozorenje da je MINGW64 deprecated (svesno ga koristimo).
+          msystem-mingw64-suppress-deprecation-warning: true
           install: >-
             zip
 
       - name: Build bundle (install + collect, never fails)
         shell: msys2 {0}
         run: |
-          # MSYS2 ljuska na Actions-u ume da uključi set -e / pipefail, pa bi jedna
-          # cevovod-komanda koja vrati ne-nulu oborila ceo korak. Isključujemo to,
-          # da korak UVEK napravi i okači bundle sa build-info.txt.
           set +e
           set +o pipefail
           mkdir -p bundle
@@ -43,17 +43,17 @@ jobs:
 
           echo "== install ==" >> "$LOG"
           for pkg in \
-            mingw-w64-ucrt-x86_64-libimobiledevice \
-            mingw-w64-ucrt-x86_64-libirecovery \
-            mingw-w64-ucrt-x86_64-idevicerestore ; do
+            mingw-w64-x86_64-libimobiledevice \
+            mingw-w64-x86_64-libirecovery \
+            mingw-w64-x86_64-idevicerestore ; do
             echo "-- $pkg --" >> "$LOG"
             pacman -S --needed --noconfirm "$pkg" >> "$LOG" 2>&1 || echo "FAILED: $pkg" >> "$LOG"
           done
 
-          echo "== pacman -Q (relevantno) ==" >> "$LOG"
-          pacman -Q 2>/dev/null | grep -Ei 'idevice|imobile|irecovery|tatsu|plist|usbmuxd' >> "$LOG" || echo "(nista)" >> "$LOG"
-          echo "== find idevicerestore.exe ==" >> "$LOG"
-          find / -name 'idevicerestore.exe' 2>/dev/null >> "$LOG" || echo "(nije nadjeno)" >> "$LOG"
+          echo "== pacman -Ql idevicerestore (exe) ==" >> "$LOG"
+          pacman -Ql mingw-w64-x86_64-idevicerestore 2>/dev/null | grep -i '\.exe' >> "$LOG" || echo "(nema exe u paketu)" >> "$LOG"
+          echo "== find idevicerestore(.exe) svuda ==" >> "$LOG"
+          find / -iname 'idevicerestore*' 2>/dev/null >> "$LOG" || echo "(nije nadjeno)" >> "$LOG"
           echo "== ls prefix/bin ==" >> "$LOG"
           ls -la "$MINGW_PREFIX/bin"/idevice* "$MINGW_PREFIX/bin"/irecovery* >> "$LOG" 2>&1 || true
 

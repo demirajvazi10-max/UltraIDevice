@@ -24,14 +24,20 @@ jobs:
       - name: Set up MSYS2
         uses: msys2/setup-msys2@v2
         with:
-          # UCRT64 je novi preporučeni MSYS2 environment (MINGW64 je deprecated).
           msystem: UCRT64
           update: true
-          # Samo idevicerestore — pacman sam povuče sve zavisnosti
-          # (libimobiledevice sa alatima idevice_id/ideviceinfo/idevicebackup2/
-          #  ideviceenterrecovery, pa libirecovery sa irecovery, libplist...).
           install: >-
             zip
+
+      - name: Install device tools from MSYS2
+        shell: msys2 {0}
+        run: |
+          # Eksplicitno, sa vidljivim ishodom. idevicerestore povuče libimobiledevice
+          # (idevice_id/ideviceinfo/idevicebackup2/ideviceenterrecovery), libirecovery
+          # (irecovery), libtatsu, libplist...
+          pacman -S --needed --noconfirm \
+            mingw-w64-ucrt-x86_64-libimobiledevice \
+            mingw-w64-ucrt-x86_64-libirecovery \
             mingw-w64-ucrt-x86_64-idevicerestore
 
       - name: Collect binaries and their DLL dependencies
@@ -39,17 +45,31 @@ jobs:
         run: |
           set -e
           mkdir -p bundle
-          # $MINGW_PREFIX je /ucrt64 u ovom okruženju (ili /mingw64 u starom).
+
+          # ── Dijagnostika u bundle (da se tačno vidi šta je instalirano) ──
+          {
+            echo "== MINGW_PREFIX = $MINGW_PREFIX =="
+            echo "== pacman -Q (relevantno) =="
+            pacman -Q 2>/dev/null | grep -Ei 'idevice|imobile|irecovery|tatsu|plist|usbmuxd' || echo "(nista)"
+            echo "== find idevicerestore.exe =="
+            find / -name 'idevicerestore.exe' 2>/dev/null || echo "(nije nadjeno)"
+            echo "== ls prefix/bin idevice* irecovery* =="
+            ls -la "$MINGW_PREFIX/bin"/idevice* "$MINGW_PREFIX/bin"/irecovery* 2>/dev/null || true
+          } > bundle/build-info.txt
+
+          # ── Kopiraj alate (sa potragom ako nisu na očekivanom mestu) ──
           TOOLS="idevice_id ideviceinfo idevicerestore irecovery ideviceenterrecovery idevicebackup2"
           for t in $TOOLS; do
             p="$MINGW_PREFIX/bin/$t.exe"
-            if [ -f "$p" ]; then
+            if [ ! -f "$p" ]; then
+              p="$(find / -name "$t.exe" 2>/dev/null | head -n 1)"
+            fi
+            if [ -n "$p" ] && [ -f "$p" ]; then
               cp "$p" bundle/
-              # ldd daje pune putanje zavisnih DLL-ova; uzmemo one iz MSYS2 prefiksa.
               ldd "$p" | awk -v pfx="$MINGW_PREFIX" '/=>/ && $3 ~ pfx {print $3}' | sort -u \
                 | while read -r d; do [ -f "$d" ] && cp -u "$d" bundle/ || true; done
             else
-              echo "MISSING TOOL: $t"
+              echo "MISSING TOOL: $t" | tee -a bundle/build-info.txt
             fi
           done
           echo "---- bundle contents ----"
@@ -67,7 +87,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           R: ${{ github.repository }}
         run: |
-          # Napravi "tools-latest" release ako ne postoji, pa zakači/osveži zip.
           gh release view tools-latest --repo "$R" >/dev/null 2>&1 \
             || gh release create tools-latest --repo "$R" --prerelease \
                  --title "Device tools (auto-built)" \

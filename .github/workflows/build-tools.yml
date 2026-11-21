@@ -3,11 +3,11 @@ name: Build device tools bundle
 # Sklapa Windows x64 bundle alata (libimobiledevice + idevicerestore) iz MSYS2
 # paketa i objavljuje ga na STALNI "tools-latest" release kao
 # "ultraidevice-tools-win-x64.zip". Aplikacija (Tools > Install device tools)
-# preuzima BAŠ taj fajl, pa posle prvog uspešnog pokretanja ovog workflow-a
-# auto-instalacija radi za sve korisnike, bez ičega ručnog.
+# preuzima BAŠ taj fajl.
 #
-# Pokreće se sam na svaki push na main, ili ručno
-# (Actions > Build device tools bundle > Run workflow).
+# Ova verzija je otporna na greške: instalacija paketa NE ruši build (svaki
+# paket zasebno, uz log), i u bundle UVEK ide build-info.txt sa dijagnostikom,
+# pa se tačno vidi šta je instalirano i gde je idevicerestore.exe.
 
 on:
   push:
@@ -29,47 +29,41 @@ jobs:
           install: >-
             zip
 
-      - name: Install device tools from MSYS2
+      - name: Build bundle (install + collect, never fails)
         shell: msys2 {0}
         run: |
-          # Eksplicitno, sa vidljivim ishodom. idevicerestore povuče libimobiledevice
-          # (idevice_id/ideviceinfo/idevicebackup2/ideviceenterrecovery), libirecovery
-          # (irecovery), libtatsu, libplist...
-          pacman -S --needed --noconfirm \
+          mkdir -p bundle
+          LOG=bundle/build-info.txt
+          echo "== MINGW_PREFIX = $MINGW_PREFIX ==" > "$LOG"
+
+          echo "== install ==" >> "$LOG"
+          for pkg in \
             mingw-w64-ucrt-x86_64-libimobiledevice \
             mingw-w64-ucrt-x86_64-libirecovery \
-            mingw-w64-ucrt-x86_64-idevicerestore
+            mingw-w64-ucrt-x86_64-idevicerestore ; do
+            echo "-- $pkg --" >> "$LOG"
+            pacman -S --needed --noconfirm "$pkg" >> "$LOG" 2>&1 || echo "FAILED: $pkg" >> "$LOG"
+          done
 
-      - name: Collect binaries and their DLL dependencies
-        shell: msys2 {0}
-        run: |
-          set -e
-          mkdir -p bundle
+          echo "== pacman -Q (relevantno) ==" >> "$LOG"
+          pacman -Q 2>/dev/null | grep -Ei 'idevice|imobile|irecovery|tatsu|plist|usbmuxd' >> "$LOG" || echo "(nista)" >> "$LOG"
+          echo "== find idevicerestore.exe ==" >> "$LOG"
+          find / -name 'idevicerestore.exe' 2>/dev/null >> "$LOG" || echo "(nije nadjeno)" >> "$LOG"
+          echo "== ls prefix/bin ==" >> "$LOG"
+          ls -la "$MINGW_PREFIX/bin"/idevice* "$MINGW_PREFIX/bin"/irecovery* >> "$LOG" 2>&1 || true
 
-          # ── Dijagnostika u bundle (da se tačno vidi šta je instalirano) ──
-          {
-            echo "== MINGW_PREFIX = $MINGW_PREFIX =="
-            echo "== pacman -Q (relevantno) =="
-            pacman -Q 2>/dev/null | grep -Ei 'idevice|imobile|irecovery|tatsu|plist|usbmuxd' || echo "(nista)"
-            echo "== find idevicerestore.exe =="
-            find / -name 'idevicerestore.exe' 2>/dev/null || echo "(nije nadjeno)"
-            echo "== ls prefix/bin idevice* irecovery* =="
-            ls -la "$MINGW_PREFIX/bin"/idevice* "$MINGW_PREFIX/bin"/irecovery* 2>/dev/null || true
-          } > bundle/build-info.txt
-
-          # ── Kopiraj alate (sa potragom ako nisu na očekivanom mestu) ──
+          echo "== collect ==" >> "$LOG"
           TOOLS="idevice_id ideviceinfo idevicerestore irecovery ideviceenterrecovery idevicebackup2"
           for t in $TOOLS; do
             p="$MINGW_PREFIX/bin/$t.exe"
-            if [ ! -f "$p" ]; then
-              p="$(find / -name "$t.exe" 2>/dev/null | head -n 1)"
-            fi
+            [ -f "$p" ] || p="$(find / -name "$t.exe" 2>/dev/null | head -n 1)"
             if [ -n "$p" ] && [ -f "$p" ]; then
+              echo "OK $t -> $p" >> "$LOG"
               cp "$p" bundle/
               ldd "$p" | awk -v pfx="$MINGW_PREFIX" '/=>/ && $3 ~ pfx {print $3}' | sort -u \
                 | while read -r d; do [ -f "$d" ] && cp -u "$d" bundle/ || true; done
             else
-              echo "MISSING TOOL: $t" | tee -a bundle/build-info.txt
+              echo "MISSING $t" >> "$LOG"
             fi
           done
           echo "---- bundle contents ----"

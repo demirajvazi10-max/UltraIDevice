@@ -32,6 +32,11 @@ jobs:
       - name: Build bundle (install + collect, never fails)
         shell: msys2 {0}
         run: |
+          # MSYS2 ljuska na Actions-u ume da uključi set -e / pipefail, pa bi jedna
+          # cevovod-komanda koja vrati ne-nulu oborila ceo korak. Isključujemo to,
+          # da korak UVEK napravi i okači bundle sa build-info.txt.
+          set +e
+          set +o pipefail
           mkdir -p bundle
           LOG=bundle/build-info.txt
           echo "== MINGW_PREFIX = $MINGW_PREFIX ==" > "$LOG"
@@ -60,8 +65,8 @@ jobs:
             if [ -n "$p" ] && [ -f "$p" ]; then
               echo "OK $t -> $p" >> "$LOG"
               cp "$p" bundle/
-              ldd "$p" | awk -v pfx="$MINGW_PREFIX" '/=>/ && $3 ~ pfx {print $3}' | sort -u \
-                | while read -r d; do [ -f "$d" ] && cp -u "$d" bundle/ || true; done
+              { ldd "$p" | awk -v pfx="$MINGW_PREFIX" '/=>/ && $3 ~ pfx {print $3}' | sort -u \
+                | while read -r d; do [ -f "$d" ] && cp -u "$d" bundle/; done ; } || true
             else
               echo "MISSING $t" >> "$LOG"
             fi

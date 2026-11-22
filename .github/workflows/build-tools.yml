@@ -65,7 +65,9 @@ jobs:
           # "x86_64-w64-mingw32-idevicerestore.exe". Zato tražimo i to prefiksovano
           # ime i bilo koje "*ime.exe", pa KOPIRAMO pod kanonskim imenom (bundle/$t.exe),
           # da ih aplikacija nađe po očekivanim imenima.
-          TOOLS="idevice_id ideviceinfo idevicerestore irecovery ideviceenterrecovery idevicebackup2"
+          # 6 osnovnih + idevicediagnostics (zdravlje baterije/dijagnostika) i
+          # idevicepair (buduće dugme "Upari / Trust").
+          TOOLS="idevice_id ideviceinfo idevicerestore irecovery ideviceenterrecovery idevicebackup2 idevicediagnostics idevicepair"
           for t in $TOOLS; do
             p="$MINGW_PREFIX/bin/$t.exe"
             [ -f "$p" ] || p="$MINGW_PREFIX/bin/x86_64-w64-mingw32-$t.exe"

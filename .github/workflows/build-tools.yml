@@ -57,7 +57,10 @@ jobs:
           set +e
           set +o pipefail
           mkdir -p bundle src
-          LOG=bundle/build-info.txt
+          # APSOLUTNA putanja — build se radi unutar "cd src/<projekat>",
+          # pa relativna putanja do loga tamo ne bi postojala (i preusmeravanje
+          # izlaza bi puklo pre nego što build uopšte krene).
+          LOG="$(pwd)/bundle/build-info.txt"
           echo "== MINGW_PREFIX = $MINGW_PREFIX ==" > "$LOG"
           echo "== built from libimobiledevice git master ==" >> "$LOG"
           date >> "$LOG"
@@ -132,3 +135,19 @@ jobs:
                  --title "Device tools (auto-built)" \
                  --notes "Auto-built libimobiledevice + idevicerestore Windows x64 bundle (from git master, includes libtatsu). Downloaded by the app's Tools > Install device tools."
           gh release upload tools-latest ultraidevice-tools-win-x64.zip --clobber --repo "$R"
+
+      - name: Verify bundle is complete (fails the run if not)
+        shell: msys2 {0}
+        run: |
+          # Tek sada rušimo run ako nešto ključno fali — bundle + build-info.txt
+          # su već objavljeni gore, pa dijagnostika postoji i kad ovo padne.
+          missing=0
+          for f in idevicerestore.exe idevice_id.exe ideviceinfo.exe irecovery.exe; do
+            if [ ! -f "bundle/$f" ]; then echo "MISSING: bundle/$f"; missing=1; fi
+          done
+          if ! ls bundle/ | grep -qi tatsu; then echo "MISSING: libtatsu DLL"; missing=1; fi
+          if [ "$missing" -ne 0 ]; then
+            echo "Bundle je nepotpun — pogledaj build-info.txt u tools-latest release-u."
+            exit 1
+          fi
+          echo "Bundle OK: idevicerestore + libtatsu prisutni."

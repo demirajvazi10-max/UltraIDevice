@@ -1,15 +1,22 @@
 name: Build device tools bundle
 
-# Sklapa Windows x64 bundle alata (libimobiledevice + idevicerestore) iz MSYS2
-# paketa i objavljuje ga na STALNI "tools-latest" release kao
-# "ultraidevice-tools-win-x64.zip". Aplikacija (Tools > Install device tools)
-# preuzima BAŠ taj fajl.
+# Sklapa Windows x64 bundle alata (libimobiledevice + idevicerestore) i objavljuje
+# ga na STALNI "tools-latest" release kao "ultraidevice-tools-win-x64.zip".
+# Aplikacija (Tools > Install device tools) preuzima BAŠ taj fajl.
 #
-# ISTORIJA pokušaja (dijagnostikom potvrđeno):
-#   - MINGW64: paketi vise NE postoje (MSYS2 gasi MINGW64) -> "target not found".
-#   - UCRT64:  idevicerestore paket se instalira ali NE isporuči idevicerestore.exe.
-#   - CLANG64: koristimo sada; najverovatnije ima kompletan paket sa .exe.
-# Korak se ne ruši na grešku i uvek objavi bundle sa build-info.txt (dijagnostika).
+# ZAŠTO BUILD IZ IZVORA (a ne pacman paketi):
+#   MSYS2 pacman isporučuje ZASTAREO idevicerestore (bez libtatsu) koji za
+#   iOS 26/27 šalje pogrešan TSS zahtev -> Apple vraća STATUS=94 i erase padne
+#   na "Unable to get SHSH blobs", a update padne na "preboard manifest".
+#   Zato gradimo CEO lanac iz zvaničnog git master-a, uključujući libtatsu
+#   (biblioteka koja sastavlja TSS zahtev), pa uvek imamo najnoviji kod sa
+#   podrškom za aktuelni iOS.
+#
+# Redosled build-a je bitan (svaki zavisi od prethodnih):
+#   libplist -> libimobiledevice-glue -> libtatsu -> libusbmuxd
+#            -> libimobiledevice -> libirecovery -> idevicerestore
+#
+# Korak se ne ruši na grešku i UVEK objavi bundle sa build-info.txt (dijagnostika).
 
 on:
   push:
@@ -26,62 +33,85 @@ jobs:
       - name: Set up MSYS2
         uses: msys2/setup-msys2@v2
         with:
-          msystem: CLANG64
-          # Bez punog pacman -Syuu (traje dugo) — bazu osvežimo sa pacman -Sy niže.
+          msystem: UCRT64
           update: false
           install: >-
+            base-devel
+            git
+            autoconf
+            automake
+            libtool
+            make
+            pkgconf
             zip
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-pkgconf
+            mingw-w64-ucrt-x86_64-openssl
+            mingw-w64-ucrt-x86_64-libzip
+            mingw-w64-ucrt-x86_64-curl
+            mingw-w64-ucrt-x86_64-libusb
 
-      - name: Build bundle (install + collect, never fails)
+      - name: Build from git master (never fails the step)
         shell: msys2 {0}
         run: |
           set +e
           set +o pipefail
-          mkdir -p bundle
+          mkdir -p bundle src
           LOG=bundle/build-info.txt
           echo "== MINGW_PREFIX = $MINGW_PREFIX ==" > "$LOG"
+          echo "== built from libimobiledevice git master ==" >> "$LOG"
+          date >> "$LOG"
 
-          # Osveži bazu paketa (mora uspeti da bi se paketi našli).
-          pacman -Sy --noconfirm >> "$LOG" 2>&1 || true
+          # Gradi jedan projekat iz git master-a i instalira ga u $MINGW_PREFIX
+          # (tako ga sledeći projekti nalaze preko pkg-config).
+          build_one() {
+            name="$1"; shift
+            echo "==================== build $name ====================" >> "$LOG"
+            rm -rf "src/$name"
+            git clone --depth 1 "https://github.com/libimobiledevice/$name" "src/$name" >> "$LOG" 2>&1 \
+              || { echo "CLONE FAILED: $name" >> "$LOG"; return 1; }
+            ( cd "src/$name" \
+                && ./autogen.sh --prefix="$MINGW_PREFIX" "$@" >> "$LOG" 2>&1 \
+                && make -j"$(nproc)" >> "$LOG" 2>&1 \
+                && make install >> "$LOG" 2>&1 ) \
+              || { echo "BUILD FAILED: $name" >> "$LOG"; return 1; }
+            # zabeleži verziju (git opis) radi dijagnostike
+            echo -n "version $name = " >> "$LOG"
+            ( cd "src/$name" && git describe --tags --always 2>/dev/null ) >> "$LOG" 2>&1 || echo "?" >> "$LOG"
+            echo "OK: $name" >> "$LOG"
+          }
 
-          echo "== install (CLANG64) ==" >> "$LOG"
-          for pkg in \
-            mingw-w64-clang-x86_64-libimobiledevice \
-            mingw-w64-clang-x86_64-libirecovery \
-            mingw-w64-clang-x86_64-idevicerestore ; do
-            echo "-- $pkg --" >> "$LOG"
-            pacman -S --needed --noconfirm "$pkg" >> "$LOG" 2>&1 || echo "FAILED: $pkg" >> "$LOG"
-          done
+          build_one libplist               --without-cython
+          build_one libimobiledevice-glue
+          build_one libtatsu
+          build_one libusbmuxd
+          build_one libimobiledevice       --without-cython
+          build_one libirecovery
+          build_one idevicerestore
 
-          echo "== pacman -Ql clang idevicerestore (exe) ==" >> "$LOG"
-          pacman -Ql mingw-w64-clang-x86_64-idevicerestore 2>/dev/null | grep -i '\.exe' >> "$LOG" || echo "(nema exe u paketu)" >> "$LOG"
-          echo "== find idevicerestore(.exe) svuda ==" >> "$LOG"
-          find / -iname 'idevicerestore*' 2>/dev/null >> "$LOG" || echo "(nije nadjeno)" >> "$LOG"
-          echo "== ls prefix/bin ==" >> "$LOG"
-          ls -la "$MINGW_PREFIX/bin"/idevice* "$MINGW_PREFIX/bin"/irecovery* >> "$LOG" 2>&1 || true
-
-          echo "== collect ==" >> "$LOG"
-          # NAPOMENA: CLANG64 isporučuje idevicerestore pod imenom
-          # "x86_64-w64-mingw32-idevicerestore.exe". Zato tražimo i to prefiksovano
-          # ime i bilo koje "*ime.exe", pa KOPIRAMO pod kanonskim imenom (bundle/$t.exe),
-          # da ih aplikacija nađe po očekivanim imenima.
-          # 6 osnovnih + idevicediagnostics (zdravlje baterije/dijagnostika) i
-          # idevicepair (buduće dugme "Upari / Trust").
+          echo "==================== collect ====================" >> "$LOG"
+          # Kad se gradi iz izvora, imena su kanonska (idevicerestore.exe itd.),
+          # ali zadržavamo i fallback pretragu za svaki slučaj.
+          # 6 osnovnih + idevicediagnostics (zdravlje baterije) + idevicepair (Trust).
           TOOLS="idevice_id ideviceinfo idevicerestore irecovery ideviceenterrecovery idevicebackup2 idevicediagnostics idevicepair"
           for t in $TOOLS; do
             p="$MINGW_PREFIX/bin/$t.exe"
-            [ -f "$p" ] || p="$MINGW_PREFIX/bin/x86_64-w64-mingw32-$t.exe"
             [ -f "$p" ] || p="$(find "$MINGW_PREFIX/bin" -iname "*$t.exe" 2>/dev/null | head -n 1)"
             [ -f "$p" ] || p="$(find / -iname "*$t.exe" 2>/dev/null | head -n 1)"
             if [ -n "$p" ] && [ -f "$p" ]; then
               echo "OK $t -> $p" >> "$LOG"
               cp "$p" "bundle/$t.exe"
+              # povuci sve DLL zavisnosti iz prefiksa (uključujući libtatsu,
+              # sveže izgrađene libimobiledevice/libirecovery itd.)
               { ldd "$p" | awk -v pfx="$MINGW_PREFIX" '/=>/ && $3 ~ pfx {print $3}' | sort -u \
                 | while read -r d; do [ -f "$d" ] && cp -u "$d" bundle/; done ; } || true
             else
               echo "MISSING $t" >> "$LOG"
             fi
           done
+
+          echo "== libtatsu prisutan? ==" >> "$LOG"
+          ls -la bundle/ | grep -i tatsu >> "$LOG" || echo "(NEMA libtatsu u bundle-u!)" >> "$LOG"
           echo "---- bundle contents ----"
           ls -la bundle
 
@@ -100,5 +130,5 @@ jobs:
           gh release view tools-latest --repo "$R" >/dev/null 2>&1 \
             || gh release create tools-latest --repo "$R" --prerelease \
                  --title "Device tools (auto-built)" \
-                 --notes "Auto-built libimobiledevice + idevicerestore Windows x64 bundle. Downloaded by the app's Tools > Install device tools."
+                 --notes "Auto-built libimobiledevice + idevicerestore Windows x64 bundle (from git master, includes libtatsu). Downloaded by the app's Tools > Install device tools."
           gh release upload tools-latest ultraidevice-tools-win-x64.zip --clobber --repo "$R"

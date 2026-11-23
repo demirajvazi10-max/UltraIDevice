@@ -91,12 +91,72 @@ jobs:
           build_one libimobiledevice       --without-cython
           build_one libirecovery
           build_one idevicerestore
+          build_one ideviceinstaller      # upravljanje aplikacijama (.ipa install/uninstall/list)
+
+          # ── Mali custom alat: ideviceaccessibility ──────────────────────────
+          # Postavlja prekidače pristupačnosti preko lockdown domena
+          # com.apple.Accessibility (isto što je stari iTunes radio kroz
+          # "Configure Accessibility"). Ključ za VoiceOver: VoiceOverTouchEnabledByiTunes.
+          # Upotreba: ideviceaccessibility -u UDID on|off [-k Kljuc]
+          echo "==================== build ideviceaccessibility ====================" >> "$LOG"
+          cat > uaccess.c <<'EOF'
+          #include <stdio.h>
+          #include <string.h>
+          #include <libimobiledevice/libimobiledevice.h>
+          #include <libimobiledevice/lockdown.h>
+          #include <plist/plist.h>
+
+          int main(int argc, char **argv) {
+              const char *udid = NULL;
+              const char *key  = "VoiceOverTouchEnabledByiTunes";
+              int onoff = 1;
+              for (int i = 1; i < argc; i++) {
+                  if (!strcmp(argv[i], "-u") && i + 1 < argc) udid = argv[++i];
+                  else if (!strcmp(argv[i], "-k") && i + 1 < argc) key = argv[++i];
+                  else if (!strcmp(argv[i], "on"))  onoff = 1;
+                  else if (!strcmp(argv[i], "off")) onoff = 0;
+              }
+              idevice_t dev = NULL;
+              if (idevice_new_with_options(&dev, udid,
+                      IDEVICE_LOOKUP_USBMUX | IDEVICE_LOOKUP_NETWORK) != IDEVICE_E_SUCCESS || !dev) {
+                  fprintf(stderr, "ERROR: device not found\n");
+                  return 2;
+              }
+              lockdownd_client_t cli = NULL;
+              if (lockdownd_client_new_with_handshake(dev, &cli, "UltraIDevice") != LOCKDOWN_E_SUCCESS) {
+                  fprintf(stderr, "ERROR: lockdown handshake failed (device may need Trust/pairing)\n");
+                  idevice_free(dev);
+                  return 3;
+              }
+              plist_t val = plist_new_bool(onoff);
+              lockdownd_error_t e = lockdownd_set_value(cli, "com.apple.Accessibility", key, val);
+              plist_free(val);
+              lockdownd_client_free(cli);
+              idevice_free(dev);
+              if (e != LOCKDOWN_E_SUCCESS) {
+                  fprintf(stderr, "ERROR: set_value failed (%d)\n", (int)e);
+                  return 4;
+              }
+              printf("OK: %s = %d\n", key, onoff);
+              return 0;
+          }
+          EOF
+          # YAML blok ima uvlačenje; skini vodeće razmake pre kompajliranja.
+          sed -i 's/^          //' uaccess.c
+          if gcc -O2 uaccess.c -o bundle/ideviceaccessibility.exe \
+                $(pkg-config --cflags --libs libimobiledevice-1.0 libplist-2.0) >> "$LOG" 2>&1; then
+              echo "OK: ideviceaccessibility" >> "$LOG"
+              { ldd bundle/ideviceaccessibility.exe | awk -v pfx="$MINGW_PREFIX" '/=>/ && $3 ~ pfx {print $3}' \
+                | sort -u | while read -r d; do [ -f "$d" ] && cp -u "$d" bundle/; done ; } || true
+          else
+              echo "BUILD FAILED: ideviceaccessibility" >> "$LOG"
+          fi
 
           echo "==================== collect ====================" >> "$LOG"
           # Kad se gradi iz izvora, imena su kanonska (idevicerestore.exe itd.),
           # ali zadržavamo i fallback pretragu za svaki slučaj.
           # 6 osnovnih + idevicediagnostics (zdravlje baterije) + idevicepair (Trust).
-          TOOLS="idevice_id ideviceinfo idevicerestore irecovery ideviceenterrecovery idevicebackup2 idevicediagnostics idevicepair"
+          TOOLS="idevice_id ideviceinfo idevicerestore irecovery ideviceenterrecovery idevicebackup2 idevicediagnostics idevicepair idevicename afcclient ideviceinstaller"
           for t in $TOOLS; do
             p="$MINGW_PREFIX/bin/$t.exe"
             [ -f "$p" ] || p="$(find "$MINGW_PREFIX/bin" -iname "*$t.exe" 2>/dev/null | head -n 1)"

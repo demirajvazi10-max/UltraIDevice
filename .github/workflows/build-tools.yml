@@ -57,6 +57,9 @@ jobs:
         run: |
           set +e
           set +o pipefail
+          # Nijedan korak ne sme da visi čekajući unos sa tastature: daj svemu EOF
+          # na stdin. (Prošli run se zaglavio 6h jer je jedan build čekao stdin.)
+          exec </dev/null
           mkdir -p bundle src
           # APSOLUTNA putanja — build se radi unutar "cd src/<projekat>",
           # pa relativna putanja do loga tamo ne bi postojala (i preusmeravanje
@@ -74,11 +77,13 @@ jobs:
             rm -rf "src/$name"
             git clone --depth 1 "https://github.com/libimobiledevice/$name" "src/$name" >> "$LOG" 2>&1 \
               || { echo "CLONE FAILED: $name" >> "$LOG"; return 1; }
+            # Svaka faza ima rok (timeout) i prazan stdin — nijedan korak ne može
+            # da zaglavi ceo posao (prošli run je visio 6h na jednom buildu).
             ( cd "src/$name" \
-                && ./autogen.sh --prefix="$MINGW_PREFIX" "$@" >> "$LOG" 2>&1 \
-                && make -j"$(nproc)" >> "$LOG" 2>&1 \
-                && make install >> "$LOG" 2>&1 ) \
-              || { echo "BUILD FAILED: $name" >> "$LOG"; return 1; }
+                && timeout 1200 ./autogen.sh --prefix="$MINGW_PREFIX" "$@" >> "$LOG" 2>&1 </dev/null \
+                && timeout 2400 make -j"$(nproc)" >> "$LOG" 2>&1 </dev/null \
+                && timeout 600 make install >> "$LOG" 2>&1 </dev/null ) \
+              || { echo "BUILD FAILED or TIMED OUT: $name" >> "$LOG"; return 1; }
             # zabeleži verziju (git opis) radi dijagnostike
             echo -n "version $name = " >> "$LOG"
             ( cd "src/$name" && git describe --tags --always 2>/dev/null ) >> "$LOG" 2>&1 || echo "?" >> "$LOG"
@@ -161,8 +166,8 @@ jobs:
           TOOLS="idevice_id ideviceinfo idevicerestore irecovery ideviceenterrecovery idevicebackup2 idevicediagnostics idevicepair idevicename afcclient ideviceinstaller idevicesyslog idevicecrashreport ideviceactivation"
           for t in $TOOLS; do
             p="$MINGW_PREFIX/bin/$t.exe"
+            # Build iz izvora instalira u $MINGW_PREFIX/bin; samo tu i tražimo.
             [ -f "$p" ] || p="$(find "$MINGW_PREFIX/bin" -iname "*$t.exe" 2>/dev/null | head -n 1)"
-            [ -f "$p" ] || p="$(find / -iname "*$t.exe" 2>/dev/null | head -n 1)"
             if [ -n "$p" ] && [ -f "$p" ]; then
               echo "OK $t -> $p" >> "$LOG"
               cp "$p" "bundle/$t.exe"

@@ -29,8 +29,8 @@ permissions:
 jobs:
   build:
     runs-on: windows-latest
-    # Tvrd limit: ako nešto zaglavi, posao padne za 40 min umesto za 6 sati.
-    timeout-minutes: 40
+    # Tvrd limit: ako nešto zaglavi, posao padne za ~50 min umesto za 6 sati.
+    timeout-minutes: 50
     steps:
       - name: Set up MSYS2
         uses: msys2/setup-msys2@v2
@@ -52,6 +52,7 @@ jobs:
             mingw-w64-ucrt-x86_64-libzip
             mingw-w64-ucrt-x86_64-curl
             mingw-w64-ucrt-x86_64-libusb
+            mingw-w64-ucrt-x86_64-libxml2
 
       - name: Build from git master (never fails the step)
         shell: msys2 {0}
@@ -82,9 +83,9 @@ jobs:
             # Svaka faza ima rok (timeout) i prazan stdin — nijedan korak ne može
             # da zaglavi ceo posao (prošli run je visio 6h na jednom buildu).
             ( cd "src/$name" \
-                && timeout -k 60 900 ./autogen.sh --prefix="$MINGW_PREFIX" "$@" >> "$LOG" 2>&1 </dev/null \
-                && timeout -k 60 1200 make -j"$(nproc)" >> "$LOG" 2>&1 </dev/null \
-                && timeout -k 60 300 make install >> "$LOG" 2>&1 </dev/null ) \
+                && timeout -k 30 300 ./autogen.sh --prefix="$MINGW_PREFIX" "$@" >> "$LOG" 2>&1 </dev/null \
+                && timeout -k 30 900 make -j"$(nproc)" >> "$LOG" 2>&1 </dev/null \
+                && timeout -k 30 180 make install >> "$LOG" 2>&1 </dev/null ) \
               || { echo "BUILD FAILED or TIMED OUT: $name" >> "$LOG"; echo ">>> build failed $name"; return 1; }
             # zabeleži verziju (git opis) radi dijagnostike
             echo -n "version $name = " >> "$LOG"
@@ -101,10 +102,11 @@ jobs:
           build_one libirecovery
           build_one idevicerestore
           build_one ideviceinstaller      # upravljanje aplikacijama (.ipa install/uninstall/list)
-          # NAPOMENA: ideviceactivation je privremeno izbačen — njegov build je
-          # zaglavljivao ceo posao (6h). Aktivacija će doći zasebno kad to rešimo.
           # idevicesyslog i idevicecrashreport se grade zajedno sa libimobiledevice
           # (ne treba poseban build_one) — samo ih pokupimo u collect-u.
+          # ideviceactivation je POSLEDNJI: ako mu build zapne, timeout -k ga ubije za
+          # par minuta, a sve pre njega je već izgrađeno i objaviće se svejedno.
+          build_one ideviceactivation     # aktivacija uređaja posle restore-a (treba libxml2)
 
           # ── Mali custom alat: ideviceaccessibility ──────────────────────────
           # Postavlja prekidače pristupačnosti preko lockdown domena
@@ -169,7 +171,7 @@ jobs:
           # Kad se gradi iz izvora, imena su kanonska (idevicerestore.exe itd.),
           # ali zadržavamo i fallback pretragu za svaki slučaj.
           # 6 osnovnih + idevicediagnostics (zdravlje baterije) + idevicepair (Trust).
-          TOOLS="idevice_id ideviceinfo idevicerestore irecovery ideviceenterrecovery idevicebackup2 idevicediagnostics idevicepair idevicename afcclient ideviceinstaller idevicesyslog idevicecrashreport"
+          TOOLS="idevice_id ideviceinfo idevicerestore irecovery ideviceenterrecovery idevicebackup2 idevicediagnostics idevicepair idevicename afcclient ideviceinstaller idevicesyslog idevicecrashreport ideviceactivation plistutil"
           for t in $TOOLS; do
             p="$MINGW_PREFIX/bin/$t.exe"
             # Build iz izvora instalira u $MINGW_PREFIX/bin; samo tu i tražimo.

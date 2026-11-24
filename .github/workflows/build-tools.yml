@@ -50,6 +50,7 @@ jobs:
             mingw-w64-ucrt-x86_64-libzip
             mingw-w64-ucrt-x86_64-curl
             mingw-w64-ucrt-x86_64-libusb
+            mingw-w64-ucrt-x86_64-libxml2
 
       - name: Build from git master (never fails the step)
         shell: msys2 {0}
@@ -92,6 +93,7 @@ jobs:
           build_one libirecovery
           build_one idevicerestore
           build_one ideviceinstaller      # upravljanje aplikacijama (.ipa install/uninstall/list)
+          build_one ideviceactivation     # aktivacija uređaja posle restore-a (treba libxml2)
 
           # ── Mali custom alat: ideviceaccessibility ──────────────────────────
           # Postavlja prekidače pristupačnosti preko lockdown domena
@@ -156,7 +158,7 @@ jobs:
           # Kad se gradi iz izvora, imena su kanonska (idevicerestore.exe itd.),
           # ali zadržavamo i fallback pretragu za svaki slučaj.
           # 6 osnovnih + idevicediagnostics (zdravlje baterije) + idevicepair (Trust).
-          TOOLS="idevice_id ideviceinfo idevicerestore irecovery ideviceenterrecovery idevicebackup2 idevicediagnostics idevicepair idevicename afcclient ideviceinstaller"
+          TOOLS="idevice_id ideviceinfo idevicerestore irecovery ideviceenterrecovery idevicebackup2 idevicediagnostics idevicepair idevicename afcclient ideviceinstaller idevicesyslog idevicecrashreport ideviceactivation"
           for t in $TOOLS; do
             p="$MINGW_PREFIX/bin/$t.exe"
             [ -f "$p" ] || p="$(find "$MINGW_PREFIX/bin" -iname "*$t.exe" 2>/dev/null | head -n 1)"

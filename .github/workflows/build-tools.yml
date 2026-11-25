@@ -104,9 +104,10 @@ jobs:
           build_one ideviceinstaller      # upravljanje aplikacijama (.ipa install/uninstall/list)
           # idevicesyslog i idevicecrashreport se grade zajedno sa libimobiledevice
           # (ne treba poseban build_one) — samo ih pokupimo u collect-u.
-          # ideviceactivation je POSLEDNJI: ako mu build zapne, timeout -k ga ubije za
-          # par minuta, a sve pre njega je već izgrađeno i objaviće se svejedno.
-          build_one ideviceactivation     # aktivacija uređaja posle restore-a (treba libxml2)
+          # POSLEDNJI: repo se zove "libideviceactivation" (sa lib-), a alat koji
+          # pravi je "ideviceactivation". Ako build zapne, timeout -k ga ubije za par
+          # minuta, a sve pre njega je već izgrađeno i objaviće se svejedno.
+          build_one libideviceactivation  # aktivacija uređaja posle restore-a (treba libxml2)
 
           # ── Mali custom alat: ideviceaccessibility ──────────────────────────
           # Postavlja prekidače pristupačnosti preko lockdown domena

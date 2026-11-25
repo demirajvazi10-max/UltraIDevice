@@ -26,6 +26,7 @@ namespace UltraIDevice
             DeviceEngine.LogSink = Logger.Write;
 
             _settings = AppSettings.Load();
+            DeviceEngine.KeepFirmware = _settings.KeepFirmware;  // podrazumevano briše firmver posle instalacije
 
             // Tema: ako korisnik nije birao, a čitač ekrana radi -> visok kontrast.
             string theme = _settings.Theme;
@@ -97,6 +98,7 @@ namespace UltraIDevice
             btnBrowseIpsw.Content = L("btn_browse_ipsw");
             grpActions.Header = L("grp_actions");
             btnInfo.Content = L("btn_info");
+            btnDiagnostics.Content = L("btn_diagnostics");
             btnUpdate.Content = L("btn_update");
             btnRestore.Content = L("btn_restore");
             btnBackup.Content = L("btn_backup");
@@ -104,6 +106,17 @@ namespace UltraIDevice
             btnRecovery.Content = L("btn_recovery");
             btnExitRecovery.Content = L("btn_exit_recovery");
             btnDfu.Content = L("btn_dfu");
+            btnFiles.Content = L("btn_files");
+            btnTrust.Content = L("btn_trust");
+            btnRename.Content = L("btn_rename");
+            btnRestart.Content = L("btn_restart");
+            btnShutdown.Content = L("btn_shutdown");
+            btnVoiceOverOn.Content = L("btn_vo_on");
+            btnVoiceOverOff.Content = L("btn_vo_off");
+            btnApps.Content = L("btn_apps");
+            btnSyslog.Content = L("btn_syslog");
+            btnCrash.Content = L("btn_crash");
+            btnActivate.Content = L("btn_activate");
             btnCancel.Content = L("btn_cancel");
 
             if (string.IsNullOrEmpty(txtIpswPath.Text)) txtIpswPath.Text = "";
@@ -167,8 +180,19 @@ namespace UltraIDevice
         // ════════════════════════════════════════════════════════════════
         private async Task InitialCheckAsync()
         {
-            if (!ToolManager.ToolsInstalled)
+            var missing = ToolManager.MissingTools();
+            if (missing.Count == ToolManager.CoreTools.Length)
+            {
+                // Nijedan alat nije prisutan.
                 SetProgress(LanguageManager.L("status_no_tools"), speak: true);
+            }
+            else if (missing.Count > 0)
+            {
+                // Neki rade, neki fale — reci koji fale, ali ne blokiraj ostalo.
+                bool sr = LanguageManager.Current == "sr";
+                SetProgress((sr ? "Spremno. Nedostaje: " : "Ready. Missing: ") + string.Join(", ", missing)
+                    + (sr ? " (potrebno za update/restore)." : " (needed for update/restore)."), speak: true);
+            }
             await RefreshDeviceAsync();
         }
 
@@ -190,24 +214,75 @@ namespace UltraIDevice
             UpdateActionStates();
         }
 
+        /// <summary>
+        /// Posle uspešnog restore/update-a telefon se ponovo pokreće. Ne pokušavamo
+        /// odmah detekciju (lockdownd još nije spreman — otud ranije "Mux error (-8)").
+        /// Umesto toga javljamo da se uređaj diže i tiho proveravamo dok se ne vrati
+        /// (dok ne pročitamo iOS verziju), pa tek onda prikažemo uređaj.
+        /// </summary>
+        private async Task RefreshAfterRestoreAsync()
+        {
+            SetProgress(LanguageManager.L("rebooting_wait"), speak: true);
+            Announcer.Say(txbDeviceStatus, LanguageManager.L("rebooting_wait"));
+            UpdateActionStates();
+
+            // ~2 minuta: 24 pokušaja na svakih 5s. Uređaj je stvarno nazad tek kad
+            // pročitamo iOS verziju (znak da je lockdownd podignut).
+            for (int i = 0; i < 24; i++)
+            {
+                await Task.Delay(5000);
+                DeviceInfo d;
+                try { d = await Task.Run(() => DeviceEngine.DetectAsync()); }
+                catch { d = new DeviceInfo { Mode = DeviceMode.None }; }
+
+                if (d.Mode == DeviceMode.Normal && !string.IsNullOrEmpty(d.ProductVersion))
+                {
+                    _device = d;
+                    Announcer.Say(txbDeviceStatus, _device.Describe(LanguageManager.Current));
+                    SetProgress(LanguageManager.L("status_ready"), speak: true);
+                    UpdateActionStates();
+                    return;
+                }
+            }
+
+            // Isteklo: obično osveži (korisnik uvek može i ručno Refresh / F5).
+            await RefreshDeviceAsync();
+        }
+
         private void UpdateActionStates()
         {
-            bool tools = ToolManager.ToolsInstalled;
             bool idle = !_busy;
             var mode = _device.Mode;
             bool anyDevice = mode != DeviceMode.None;
             bool normal = mode == DeviceMode.Normal;
             bool recoveryOrDfu = mode == DeviceMode.Recovery || mode == DeviceMode.Dfu;
 
+            // Svako dugme zavisi SAMO od alata koji mu stvarno treba — ne od svih.
+            // Tako Info/Backup/Recovery rade i dok npr. idevicerestore još nije tu.
+            bool Has(string t) => ToolManager.Find(t) != null;
+
             btnRefresh.IsEnabled = idle;
-            btnInfo.IsEnabled = idle && tools && normal;
-            btnUpdate.IsEnabled = idle && tools && anyDevice;
-            btnRestore.IsEnabled = idle && tools && anyDevice;
-            btnBackup.IsEnabled = idle && tools && normal;
-            btnRestoreBackup.IsEnabled = idle && tools && normal;
-            btnRecovery.IsEnabled = idle && tools && normal;
-            btnExitRecovery.IsEnabled = idle && tools && recoveryOrDfu;
+            btnInfo.IsEnabled = idle && Has("ideviceinfo") && normal;
+            // Dovoljan je ideviceinfo; idevicediagnostics je dodatak (zdravlje baterije).
+            btnDiagnostics.IsEnabled = idle && Has("ideviceinfo") && normal;
+            btnUpdate.IsEnabled = idle && Has("idevicerestore") && anyDevice;
+            btnRestore.IsEnabled = idle && Has("idevicerestore") && anyDevice;
+            btnBackup.IsEnabled = idle && Has("idevicebackup2") && normal;
+            btnRestoreBackup.IsEnabled = idle && Has("idevicebackup2") && normal;
+            btnRecovery.IsEnabled = idle && Has("ideviceenterrecovery") && normal;
+            btnExitRecovery.IsEnabled = idle && Has("irecovery") && recoveryOrDfu;
             btnDfu.IsEnabled = idle;             // vodič radi i bez uređaja
+            btnFiles.IsEnabled = idle && Has("afcclient") && normal;
+            btnTrust.IsEnabled = idle && Has("idevicepair") && normal;
+            btnRename.IsEnabled = idle && Has("idevicename") && normal;
+            btnRestart.IsEnabled = idle && Has("idevicediagnostics") && normal;
+            btnShutdown.IsEnabled = idle && Has("idevicediagnostics") && normal;
+            btnVoiceOverOn.IsEnabled = idle && Has("ideviceaccessibility") && normal;
+            btnVoiceOverOff.IsEnabled = idle && Has("ideviceaccessibility") && normal;
+            btnApps.IsEnabled = idle && Has("ideviceinstaller") && normal;
+            btnSyslog.IsEnabled = idle && Has("idevicesyslog") && normal;
+            btnCrash.IsEnabled = idle && Has("idevicecrashreport") && normal;
+            btnActivate.IsEnabled = idle && Has("ideviceactivation") && normal;
             btnCancel.IsEnabled = _busy;
 
             rbLatest.IsEnabled = idle;
@@ -249,17 +324,27 @@ namespace UltraIDevice
             else txbProgress.Text = text;
         }
 
+        /// <summary>Prevodi stabilan ključ faze (iz DeviceEngine) u čitljiv naziv; prazno ako ga nema.</summary>
+        private static string PhaseLabel(string stepKey)
+        {
+            if (string.IsNullOrEmpty(stepKey)) return "";
+            string key = "phase_" + stepKey;
+            string s = LanguageManager.L(key);
+            return s == key ? stepKey : s;   // ako prevod ne postoji, prikaži sam ključ
+        }
+
         private void OnEngineProgress(DeviceEngine.Progress p)
         {
             // Zove se sa pozadinske niti (izlaz procesa) — vrati na UI nit.
             Dispatcher.Invoke(() =>
             {
-                if (p.Percent >= 0) prgOverall.Value = p.Percent;
+                prgOverall.Value = p.Percent >= 0 ? p.Percent : 0;
 
                 string pctText = p.Percent >= 0 ? $"{p.Percent:F0}%" : "";
-                string text = string.IsNullOrEmpty(p.Step)
+                string label = PhaseLabel(p.Step);
+                string text = string.IsNullOrEmpty(label)
                     ? pctText
-                    : (string.IsNullOrEmpty(pctText) ? p.Step : $"{p.Step}, {pctText}");
+                    : (string.IsNullOrEmpty(pctText) ? label : $"{label}, {pctText}");
 
                 // Ne pričaj svaki procenat — samo na promenu koraka ili svakih ~10%.
                 bool stepChanged = p.Step != _lastSpokenStep;
@@ -274,10 +359,12 @@ namespace UltraIDevice
         // ════════════════════════════════════════════════════════════════
         // POKRETANJE DUGAČKIH RADNJI
         // ════════════════════════════════════════════════════════════════
-        private async Task RunOperation(string startKey, string doneKey, Func<CancellationToken, Task> work, bool refreshAfter = true)
+        private async Task RunOperation(string startKey, string doneKey, Func<CancellationToken, Task> work,
+            bool refreshAfter = true, bool rebootAfter = false)
         {
             if (_busy) return;
             _busy = true;
+            bool ok = false;
             _lastSpokenPct = -100; _lastSpokenStep = "";
             _cts = new CancellationTokenSource();
             prgOverall.Value = 0;
@@ -288,8 +375,11 @@ namespace UltraIDevice
             try
             {
                 await work(_cts.Token);
+                ok = true;
                 prgOverall.Value = 100;
-                SetProgress(LanguageManager.L(doneKey), speak: true);
+                // Kod restore/update-a poruku o završetku daje RefreshAfterRestoreAsync
+                // (najava reboota), da se ne bi izgovorile dve slične poruke zaredom.
+                if (!rebootAfter) SetProgress(LanguageManager.L(doneKey), speak: true);
             }
             catch (OperationCanceledException)
             {
@@ -297,11 +387,11 @@ namespace UltraIDevice
             }
             catch (RestoreException rex)
             {
-                string explain = RestoreErrors.Explain(rex.AppleErrorCode, LanguageManager.Current);
+                string explain = RestoreErrors.ExplainMessage(rex.Message, rex.AppleErrorCode, LanguageManager.Current);
                 string msg = rex.Message + "\n\n" + explain;
                 Logger.Write("RESTORE FAILED: " + rex.Message + " | code=" + (rex.AppleErrorCode?.ToString() ?? "?"));
                 SetProgress(explain, speak: true);
-                Dialogs.Error(this, LanguageManager.L("confirm_restore_title"), msg);
+                Dialogs.Error(this, "Ultra iDevice", msg);
             }
             catch (Exception ex)
             {
@@ -314,7 +404,8 @@ namespace UltraIDevice
                 _busy = false;
                 _cts?.Dispose();
                 _cts = null;
-                if (refreshAfter) await RefreshDeviceAsync();
+                if (ok && rebootAfter) await RefreshAfterRestoreAsync();
+                else if (refreshAfter) await RefreshDeviceAsync();
                 else UpdateActionStates();
             }
         }
@@ -325,7 +416,7 @@ namespace UltraIDevice
         }
 
         // ── Pojedinačne radnje ───────────────────────────────────────────
-        private void BtnInfo_Click(object sender, RoutedEventArgs e)
+        private async void BtnInfo_Click(object sender, RoutedEventArgs e)
         {
             if (_device.Mode != DeviceMode.Normal)
             {
@@ -333,14 +424,69 @@ namespace UltraIDevice
                 return;
             }
             bool sr = LanguageManager.Current == "sr";
-            string body =
-                (sr ? "Model: " : "Model: ") + _device.FriendlyModel + $" ({_device.ProductType})\n" +
-                (sr ? "iOS verzija: " : "iOS version: ") + _device.ProductVersion + "\n" +
-                (sr ? "Ime uređaja: " : "Device name: ") + _device.DeviceName + "\n" +
-                (sr ? "Serijski broj: " : "Serial number: ") + _device.SerialNumber + "\n" +
-                "UDID: " + _device.Udid;
-            Dialogs.ShowText(this, LanguageManager.L("btn_info"), body);
+            SetProgress(sr ? "Čitam podatke o uređaju..." : "Reading device information...", speak: true);
+
+            DeviceInfo d;
+            try { d = await DeviceEngine.GetFullReportAsync(_device.Udid); }
+            catch (Exception ex) { Dialogs.Error(this, "Ultra iDevice", ex.Message); SetProgress(LanguageManager.L("status_ready"), false); return; }
+
+            var sb = new System.Text.StringBuilder();
+            void Line(string srL, string enL, string val)
+            {
+                if (!string.IsNullOrWhiteSpace(val)) sb.AppendLine((sr ? srL : enL) + ": " + val);
+            }
+
+            Line("Model", "Model", d.FriendlyModel + $" ({d.ProductType})");
+            Line("iOS verzija", "iOS version",
+                d.ProductVersion + (string.IsNullOrEmpty(d.BuildVersion) ? "" : $" ({d.BuildVersion})"));
+            Line("Ime uređaja", "Device name", d.DeviceName);
+
+            if (d.BatteryPercent >= 0)
+            {
+                string b = d.BatteryPercent + "%" + (d.BatteryCharging ? (sr ? ", puni se" : ", charging") : "");
+                Line("Baterija", "Battery", b);
+            }
+            if (d.StorageTotalBytes > 0)
+            {
+                string s = (sr ? "slobodno " : "free ") + DeviceInfo.Gb(d.StorageFreeBytes) +
+                           " / " + DeviceInfo.Gb(d.StorageTotalBytes);
+                Line("Memorija", "Storage", s);
+            }
+
+            Line("Broj telefona", "Phone number", d.PhoneNumber);
+            Line("Model broj", "Model number", d.ModelNumber);
+            Line("Region", "Region", d.RegionInfo);
+            Line("Arhitektura procesora", "CPU architecture", d.CpuArchitecture);
+            Line("Aktivacija", "Activation", d.ActivationState);
+            Line("Wi-Fi adresa", "Wi-Fi address", d.WiFiAddress);
+            Line("Bluetooth adresa", "Bluetooth address", d.BluetoothAddress);
+            Line("Serijski broj", "Serial number", d.SerialNumber);
+            sb.AppendLine("UDID: " + d.Udid);
+
+            SetProgress(LanguageManager.L("status_ready"), false);
+            Dialogs.ShowText(this, LanguageManager.L("btn_info"), sb.ToString().TrimEnd());
         }
+
+        private async void BtnDiagnostics_Click(object sender, RoutedEventArgs e)
+        {
+            if (_device.Mode != DeviceMode.Normal)
+            {
+                Dialogs.Info(this, LanguageManager.L("no_device_title"), LanguageManager.L("no_device_msg"));
+                return;
+            }
+            SetProgress(LanguageManager.L("diag_running"), speak: true);
+            string report;
+            try { report = await DeviceEngine_RunDiagnostics(_device.Udid); }
+            catch (Exception ex) { Dialogs.Error(this, "Ultra iDevice", ex.Message); SetProgress(LanguageManager.L("status_ready"), false); return; }
+
+            SetProgress(LanguageManager.L("status_ready"), false);
+            Dialogs.ShowText(this, LanguageManager.L("diag_title"), report);
+        }
+
+        // Ceo dijagnostički posao ide na POZADINSKU nit (Task.Run), da ne blokira
+        // UI. Bez ovoga, sinhroni poziv unutra zaključa glavnu nit (deadlock).
+        private static Task<string> DeviceEngine_RunDiagnostics(string udid) =>
+            Task.Run(() => DiagnosticsEngine.BuildReportAsync(udid));
 
         private async void BtnUpdate_Click(object sender, RoutedEventArgs e)
         {
@@ -350,7 +496,8 @@ namespace UltraIDevice
             bool latest = rbLatest.IsChecked == true;
             string ipsw = txtIpswPath.Text;
             await RunOperation("running_update", "done_update",
-                ct => DeviceEngine.RunRestoreAsync(erase: false, latestSigned: latest, ipswPath: ipsw, OnEngineProgress, ct));
+                ct => DeviceEngine.RunRestoreAsync(erase: false, latestSigned: latest, ipswPath: ipsw, OnEngineProgress, ct),
+                rebootAfter: true);
         }
 
         private async void BtnRestore_Click(object sender, RoutedEventArgs e)
@@ -361,7 +508,8 @@ namespace UltraIDevice
             bool latest = rbLatest.IsChecked == true;
             string ipsw = txtIpswPath.Text;
             await RunOperation("running_restore", "done_restore",
-                ct => DeviceEngine.RunRestoreAsync(erase: true, latestSigned: latest, ipswPath: ipsw, OnEngineProgress, ct));
+                ct => DeviceEngine.RunRestoreAsync(erase: true, latestSigned: latest, ipswPath: ipsw, OnEngineProgress, ct),
+                rebootAfter: true);
         }
 
         private async void BtnBackup_Click(object sender, RoutedEventArgs e)
@@ -405,6 +553,179 @@ namespace UltraIDevice
         {
             var win = new DfuGuideWindow(this, _device);
             win.ShowDialog();
+        }
+
+        private void BtnFiles_Click(object sender, RoutedEventArgs e)
+        {
+            if (_busy || !EnsureNormal()) return;
+            if (!AfcEngine.Available)
+            {
+                Dialogs.Info(this, LanguageManager.L("btn_files"), LanguageManager.L("no_device_msg"));
+                return;
+            }
+            var win = new FileManagerWindow(this, _device);
+            win.ShowDialog();
+        }
+
+        private async void BtnTrust_Click(object sender, RoutedEventArgs e)
+        {
+            if (_busy || !EnsureNormal()) return;
+            bool sr = LanguageManager.Current == "sr";
+            Dialogs.Info(this, LanguageManager.L("btn_trust"), sr
+                ? "Na telefonu će se pojaviti pitanje „Veruj ovom računaru?“ — dodirni Veruj i unesi šifru ako traži, pa klikni U redu ovde."
+                : "Your phone will ask \"Trust This Computer?\" — tap Trust and enter the passcode if asked, then click OK here.");
+            SetProgress(sr ? "Uparivanje..." : "Pairing...", speak: true);
+            try
+            {
+                string msg = await DeviceEngine.PairAsync(_device.Udid, System.Threading.CancellationToken.None);
+                SetProgress(LanguageManager.L("status_ready"), false);
+                Dialogs.Info(this, LanguageManager.L("btn_trust"), msg);
+            }
+            catch (Exception ex)
+            {
+                SetProgress(LanguageManager.L("status_ready"), false);
+                Dialogs.Error(this, "Ultra iDevice", ex.Message);
+            }
+            await RefreshDeviceAsync();
+        }
+
+        private async void BtnRename_Click(object sender, RoutedEventArgs e)
+        {
+            if (_busy || !EnsureNormal()) return;
+            bool sr = LanguageManager.Current == "sr";
+            string name = Dialogs.Prompt(this, LanguageManager.L("btn_rename"),
+                sr ? "Novo ime uređaja:" : "New device name:", _device.DeviceName);
+            if (string.IsNullOrWhiteSpace(name)) return;
+
+            SetProgress(sr ? "Menjam ime..." : "Renaming...", speak: true);
+            try { await DeviceEngine.RenameAsync(_device.Udid, name.Trim(), System.Threading.CancellationToken.None); }
+            catch (Exception ex)
+            {
+                SetProgress(LanguageManager.L("status_ready"), false);
+                Dialogs.Error(this, "Ultra iDevice", ex.Message);
+                return;
+            }
+            await RefreshDeviceAsync();
+            SetProgress(LanguageManager.L("status_ready"), false);
+        }
+
+        private async void BtnRestart_Click(object sender, RoutedEventArgs e)
+        {
+            if (_busy || !EnsureNormal()) return;
+            bool sr = LanguageManager.Current == "sr";
+            if (!Dialogs.Confirm(this, LanguageManager.L("btn_restart"),
+                sr ? "Restartovati uređaj?" : "Restart the device?")) return;
+
+            SetProgress(sr ? "Restartujem uređaj..." : "Restarting device...", speak: true);
+            try { await DeviceEngine.RestartAsync(_device.Udid, System.Threading.CancellationToken.None); }
+            catch (Exception ex)
+            {
+                SetProgress(LanguageManager.L("status_ready"), false);
+                Dialogs.Error(this, "Ultra iDevice", ex.Message);
+                return;
+            }
+            SetProgress(sr ? "Uređaj se restartuje." : "The device is restarting.", speak: true);
+            await RefreshDeviceAsync();
+        }
+
+        private async void BtnShutdown_Click(object sender, RoutedEventArgs e)
+        {
+            if (_busy || !EnsureNormal()) return;
+            bool sr = LanguageManager.Current == "sr";
+            if (!Dialogs.Confirm(this, LanguageManager.L("btn_shutdown"),
+                sr ? "Isključiti uređaj?" : "Shut down the device?")) return;
+
+            SetProgress(sr ? "Isključujem uređaj..." : "Shutting down device...", speak: true);
+            try { await DeviceEngine.ShutdownAsync(_device.Udid, System.Threading.CancellationToken.None); }
+            catch (Exception ex)
+            {
+                SetProgress(LanguageManager.L("status_ready"), false);
+                Dialogs.Error(this, "Ultra iDevice", ex.Message);
+                return;
+            }
+            SetProgress(sr ? "Uređaj se isključuje." : "The device is shutting down.", speak: true);
+            await RefreshDeviceAsync();
+        }
+
+        private void BtnApps_Click(object sender, RoutedEventArgs e)
+        {
+            if (_busy || !EnsureNormal()) return;
+            var win = new AppsWindow(this, _device);
+            win.ShowDialog();
+        }
+
+        private void BtnSyslog_Click(object sender, RoutedEventArgs e)
+        {
+            if (_busy || !EnsureNormal()) return;
+            var win = new SyslogWindow(this, _device);
+            win.ShowDialog();
+        }
+
+        private async void BtnCrash_Click(object sender, RoutedEventArgs e)
+        {
+            if (_busy || !EnsureNormal()) return;
+            bool sr = LanguageManager.Current == "sr";
+            string folder = PickFolder(sr ? "Izaberi folder za crash logove" : "Choose a folder for crash logs", _settings.BackupFolder);
+            if (folder == null) return;
+
+            SetProgress(sr ? "Izvozim crash logove..." : "Exporting crash logs...", speak: true);
+            try
+            {
+                await DeviceEngine.ExportCrashLogsAsync(_device.Udid, folder, System.Threading.CancellationToken.None);
+                SetProgress(sr ? "Crash logovi izvezeni." : "Crash logs exported.", speak: true);
+                // Odmah otvori čitač nad tim folderom.
+                new CrashLogWindow(this, folder).ShowDialog();
+            }
+            catch (Exception ex)
+            {
+                SetProgress(LanguageManager.L("status_ready"), false);
+                Dialogs.Error(this, "Ultra iDevice", ex.Message);
+            }
+        }
+
+        private async void BtnActivate_Click(object sender, RoutedEventArgs e)
+        {
+            if (_busy || !EnsureNormal()) return;
+            bool sr = LanguageManager.Current == "sr";
+            SetProgress(sr ? "Aktiviram uređaj..." : "Activating device...", speak: true);
+            try
+            {
+                string msg = await DeviceEngine.ActivateAsync(_device.Udid, System.Threading.CancellationToken.None);
+                SetProgress(sr ? "Uređaj aktiviran." : "Device activated.", speak: true);
+                Dialogs.Info(this, LanguageManager.L("btn_activate"), string.IsNullOrWhiteSpace(msg) ? (sr ? "Uređaj aktiviran." : "Device activated.") : msg);
+            }
+            catch (Exception ex)
+            {
+                SetProgress(LanguageManager.L("status_ready"), false);
+                Dialogs.Error(this, "Ultra iDevice", ex.Message);
+            }
+            await RefreshDeviceAsync();
+        }
+
+        private async void BtnVoiceOverOn_Click(object sender, RoutedEventArgs e) => await SetVoiceOver(true);
+        private async void BtnVoiceOverOff_Click(object sender, RoutedEventArgs e) => await SetVoiceOver(false);
+
+        private async System.Threading.Tasks.Task SetVoiceOver(bool on)
+        {
+            if (_busy || !EnsureNormal()) return;
+            bool sr = LanguageManager.Current == "sr";
+            SetProgress(on
+                ? (sr ? "Uključujem VoiceOver na telefonu..." : "Turning on VoiceOver on the phone...")
+                : (sr ? "Isključujem VoiceOver na telefonu..." : "Turning off VoiceOver on the phone..."),
+                speak: true);
+            try
+            {
+                await DeviceEngine.SetVoiceOverAsync(_device.Udid, on, System.Threading.CancellationToken.None);
+                SetProgress(on
+                    ? (sr ? "VoiceOver uključen na telefonu." : "VoiceOver turned on on the phone.")
+                    : (sr ? "VoiceOver isključen na telefonu." : "VoiceOver turned off on the phone."),
+                    speak: true);
+            }
+            catch (Exception ex)
+            {
+                SetProgress(LanguageManager.L("status_ready"), false);
+                Dialogs.Error(this, "Ultra iDevice", ex.Message);
+            }
         }
 
         // ── Pomoćno za radnje ─────────────────────────────────────────────

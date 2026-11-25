@@ -113,6 +113,7 @@
             <GroupBox Grid.Row="3" x:Name="grpActions" Header="Actions">
                 <WrapPanel Margin="8,8,8,8">
                     <Button x:Name="btnInfo" Content="Device information" Margin="0,0,8,8" Click="BtnInfo_Click"/>
+                    <Button x:Name="btnDiagnostics" Content="Diagnostics..." Margin="0,0,8,8" Click="BtnDiagnostics_Click"/>
                     <Button x:Name="btnUpdate" Content="Update iOS" Margin="0,0,8,8" Style="{StaticResource PrimaryBtn}" Click="BtnUpdate_Click"/>
                     <Button x:Name="btnRestore" Content="Restore iOS (erases)..." Margin="0,0,8,8" Click="BtnRestore_Click"/>
                     <Button x:Name="btnBackup" Content="Back up..." Margin="0,0,8,8" Click="BtnBackup_Click"/>
@@ -120,6 +121,17 @@
                     <Button x:Name="btnRecovery" Content="Enter recovery" Margin="0,0,8,8" Click="BtnRecovery_Click"/>
                     <Button x:Name="btnExitRecovery" Content="Exit recovery / DFU" Margin="0,0,8,8" Click="BtnExitRecovery_Click"/>
                     <Button x:Name="btnDfu" Content="Guided DFU mode..." Margin="0,0,8,8" Click="BtnDfu_Click"/>
+                    <Button x:Name="btnFiles" Content="Files on device..." Margin="0,0,8,8" Click="BtnFiles_Click"/>
+                    <Button x:Name="btnTrust" Content="Trust / pair" Margin="0,0,8,8" Click="BtnTrust_Click"/>
+                    <Button x:Name="btnRename" Content="Rename device..." Margin="0,0,8,8" Click="BtnRename_Click"/>
+                    <Button x:Name="btnRestart" Content="Restart device" Margin="0,0,8,8" Click="BtnRestart_Click"/>
+                    <Button x:Name="btnShutdown" Content="Shut down device" Margin="0,0,8,8" Click="BtnShutdown_Click"/>
+                    <Button x:Name="btnVoiceOverOn" Content="Turn on VoiceOver" Margin="0,0,8,8" Click="BtnVoiceOverOn_Click"/>
+                    <Button x:Name="btnVoiceOverOff" Content="Turn off VoiceOver" Margin="0,0,8,8" Click="BtnVoiceOverOff_Click"/>
+                    <Button x:Name="btnApps" Content="Apps on device..." Margin="0,0,8,8" Click="BtnApps_Click"/>
+                    <Button x:Name="btnSyslog" Content="Device log..." Margin="0,0,8,8" Click="BtnSyslog_Click"/>
+                    <Button x:Name="btnCrash" Content="Export crash logs..." Margin="0,0,8,8" Click="BtnCrash_Click"/>
+                    <Button x:Name="btnActivate" Content="Activate device" Margin="0,0,8,8" Click="BtnActivate_Click"/>
                 </WrapPanel>
             </GroupBox>
 

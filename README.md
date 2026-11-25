@@ -1,8 +1,8 @@
 # Ultra iDevice
 
-> Accessible restore, update and backup for iPhone and iPad on Windows — with a spoken, guided DFU/recovery mode and plain-language error explanations. Part of the Ultra family of apps.
+> Accessible restore, update, backup and device management for iPhone and iPad on Windows — a file manager, app install/uninstall, live device log and crash-log reader, battery diagnostics, VoiceOver toggle, activation, plus a spoken, guided DFU/recovery mode and plain-language error explanations. Part of the Ultra family of apps.
 
-**Version 1.0.0**
+**Version 2.0.0**
 
 ---
 
@@ -15,11 +15,19 @@ It exists because those tools are either hard to use with a screen reader or giv
 ## Features
 
 ### Core actions
-- **Device information** — model, iOS version, name, serial number and UDID, read out clearly.
+- **Device information** — a full report read out clearly: model, iOS version and build, device name, **battery level and charging state**, **storage used/free**, phone number, model number, region, CPU architecture, activation state, Wi-Fi/Bluetooth addresses, serial number and UDID.
+- **Diagnostics** — a detailed service report via `idevicediagnostics`: **battery health estimate, cycle count, design vs current capacity, voltage, temperature, battery serial/manufacture date**, storage breakdown, IMEI, hardware and network details, plus a raw dump for reference. (Full genuine/replaced-parts history like an Apple Store needs Apple's GSX and is not available through these open tools; the report shows whatever the device itself exposes.)
 - **Update iOS** — install the latest signed iOS **without erasing** data.
-- **Restore iOS** — a clean install that **erases** the device (with a clear confirmation first).
+- **Restore iOS** — a clean install that **erases** the device (with a clear confirmation first). During a restore the progress is reported by **named phase** (downloading iOS, verifying firmware, sending the system to the device, installing) with a percentage for the long stages, and when it finishes the app waits for the device to **reboot** and come back on its own before reporting it again.
 - **Back up** the device to a folder, and **restore from a backup**.
 - **Enter recovery mode** (software) and **exit recovery / DFU** back to normal boot.
+- **Files on device** — a built-in, fully accessible file manager over AFC: browse folders (arrow keys, Enter to open, Backspace to go up), **download** a file to the PC, **add** a file, **delete**, and **make a new folder**. Shows what Apple exposes (DCIM/photos, Downloads, app documents); the whole system is not reachable without a jailbreak.
+- **Apps on device** — list the installed apps, **install an `.ipa`**, and **uninstall** an app, all from an accessible list (over `ideviceinstaller`).
+- **Trust / pair** the device (for the services that need it), **rename** the device, and **restart** or **shut it down** from the PC.
+- **Device log (live)** — stream the device's system log (`idevicesyslog`) in an accessible window with Start/Stop/Clear/Save, handy for diagnosing a misbehaving device.
+- **Export crash logs** — pull the device's crash reports to a folder (`idevicecrashreport`), then read them right away in a built-in **accessible crash-log reader**: pick a file from the list and its contents show below. Binary `.plist` reports are converted to readable XML automatically (`plistutil`); `.ips`/`.crash`/`.log` show as plain text.
+- **Activate device** — activate a freshly restored device (`ideviceactivation`).
+- **Turn VoiceOver on (or off) on the phone, from the PC** — the same thing the old iTunes "Configure Accessibility" did, over the lockdown `com.apple.Accessibility` domain. Meant for the case where you need the phone talking but have no one around to set it up. The device must be paired/trusted first; on a brand-new "Hello" setup screen with no pairing yet it may not go through.
 - Firmware source is your choice: **latest signed iOS, downloaded automatically**, or an **IPSW file you already have**.
 
 ### Spoken, guided DFU / recovery mode
@@ -57,7 +65,7 @@ The required tools are: `idevice_id`, `ideviceinfo`, `idevicerestore`, `irecover
 
 **Three ways to get them in place:**
 
-- **Automatic (Tools → Install device tools).** Downloads the x64 Windows bundle `ultraidevice-tools-win-x64.zip` from this project's `tools-latest` release and unpacks the `.exe`/`.dll` files into `%LOCALAPPDATA%\UltraIDevice\tools`. That bundle is produced automatically by the **`Build device tools bundle`** GitHub Action (`.github/workflows/build-tools.yml`): on every push to `main` it assembles the bundle from the MSYS2 `idevicerestore` + `libimobiledevice` packages and publishes it to the `tools-latest` release. So once that workflow has run once, every user's auto-install just works — nothing to host by hand.
+- **Automatic (Tools → Install device tools).** Downloads the x64 Windows bundle `ultraidevice-tools-win-x64.zip` from this project's `tools-latest` release and unpacks the `.exe`/`.dll` files into `%LOCALAPPDATA%\UltraIDevice\tools`. That bundle is produced automatically by the **`Build device tools bundle`** GitHub Action (`.github/workflows/build-tools.yml`): on every push to `main` it builds the whole libimobiledevice chain — `libplist`, `libimobiledevice-glue`, `libtatsu`, `libusbmuxd`, `libimobiledevice`, `libirecovery` and `idevicerestore` — from the official **git master** (not the stale MSYS2 packages, which lack `libtatsu` and fail on current iOS), then publishes it to the `tools-latest` release. Building `libtatsu` in is what lets the signing (TSS) request succeed on current iOS. So once that workflow has run once, every user's auto-install just works — nothing to host by hand.
 
 - **Running from Visual Studio (no install).** Drop the tool `.exe`/`.dll` files into a `tools` folder in the **project root** (`…\source\repos\UltraIDevice\tools\`). The project copies that folder next to the built `.exe` on every build, so the app finds the tools automatically — no install step. The `tools` folder is git-ignored, so the binaries are not committed.
 
@@ -66,8 +74,10 @@ The required tools are: `idevice_id`, `ideviceinfo`, `idevicerestore`, `irecover
 ## What it cannot do
 - **Restore to an unsigned iOS.** Apple stops signing older versions; no tool can get past that (error 3194). Only the latest signed iOS can be installed.
 - **Bypass iCloud Activation Lock.** By design — restoring a device still requires the owner's Apple ID afterwards.
+- **Update (keep data) on the very newest iOS.** On recent iOS releases the update-without-erasing path can fail with *"Unable to create preboard manifest"* — the bundled `idevicerestore` can't build the preboard manifest for the newest filesystem components. This is a limitation of the underlying tool, not the app. Use **Restore iOS** (erase) instead, which skips that step; the app detects this error and tells you so.
 
 ## Important
+- **Downloaded firmware is cleaned up automatically.** When you use *Latest signed iOS*, the IPSW (often 10+ GB) is downloaded to `%LOCALAPPDATA%\UltraIDevice\firmware` and, together with the extracted files, deleted after the install finishes. Your own IPSW files are never touched.
 - **Restore erases the device.** Always confirm there is a backup first.
 - Keep the device connected with a good, short cable straight into the computer (no hub) for the whole operation. Most restore failures are cable/port problems.
 

@@ -23,6 +23,7 @@ namespace UltraIDevice
         // ── Ponašanje ──
         public bool SpeakProgress { get; set; } = true;     // govorne najave koraka i procenata
         public bool AutoRefreshDevice { get; set; } = true; // sam proveravaj da li je telefon povezan
+        public bool KeepFirmware { get; set; } = false;     // čuvati preuzeti IPSW (10+ GB) posle instalacije? podrazumevano NE
 
         public static string AppDataFolder { get; } = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "UltraIDevice");

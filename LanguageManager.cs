@@ -88,6 +88,9 @@ namespace UltraIDevice
 
             ["grp_actions"] = "Actions",
             ["btn_info"] = "Device _information",
+            ["btn_diagnostics"] = "_Diagnostics...",
+            ["diag_running"] = "Reading diagnostics — this can take a few seconds...",
+            ["diag_title"] = "Device diagnostics",
             ["btn_update"] = "_Update iOS (keep data)",
             ["btn_restore"] = "_Restore iOS (ERASES everything)...",
             ["btn_backup"] = "_Back up this device...",
@@ -95,6 +98,17 @@ namespace UltraIDevice
             ["btn_recovery"] = "_Enter recovery mode",
             ["btn_exit_recovery"] = "E_xit recovery / DFU mode",
             ["btn_dfu"] = "Guided _DFU mode...",
+            ["btn_files"] = "Files on device...",
+            ["btn_trust"] = "Trust / pair",
+            ["btn_rename"] = "Rename device...",
+            ["btn_restart"] = "Restart device",
+            ["btn_shutdown"] = "Shut down device",
+            ["btn_vo_on"] = "Turn on VoiceOver",
+            ["btn_vo_off"] = "Turn off VoiceOver",
+            ["btn_apps"] = "Apps on device...",
+            ["btn_syslog"] = "Device log...",
+            ["btn_crash"] = "Export crash logs...",
+            ["btn_activate"] = "Activate device",
             ["btn_cancel"] = "_Cancel",
 
             ["progress_idle"] = "Ready.",
@@ -141,6 +155,20 @@ namespace UltraIDevice
 
             ["about_title"] = "About Ultra iDevice",
             ["shortcuts_title"] = "Keyboard shortcuts",
+
+            // Nazivi faza tokom restore/update-a (DeviceEngine šalje stabilan ključ).
+            ["phase_download"] = "Downloading iOS",
+            ["phase_verify"] = "Verifying firmware",
+            ["phase_prepare"] = "Preparing",
+            ["phase_recovery"] = "Entering recovery mode",
+            ["phase_send"] = "Sending firmware to the device",
+            ["phase_filesystem"] = "Sending the system to the device",
+            ["phase_cryptex"] = "Sending the system to the device",
+            ["phase_flash"] = "Writing firmware",
+            ["phase_baseband"] = "Updating the modem (baseband)",
+            ["phase_install"] = "Installing",
+            ["phase_finishing"] = "Finishing up",
+            ["rebooting_wait"] = "Restore finished. The device is restarting — this can take a minute or two. Please wait...",
         };
 
         private static readonly Dictionary<string, string> Sr = new()
@@ -189,6 +217,9 @@ namespace UltraIDevice
 
             ["grp_actions"] = "Radnje",
             ["btn_info"] = "_Informacije o uređaju",
+            ["btn_diagnostics"] = "_Dijagnostika...",
+            ["diag_running"] = "Čitam dijagnostiku — može potrajati par sekundi...",
+            ["diag_title"] = "Dijagnostika uređaja",
             ["btn_update"] = "_Ažuriraj iOS (čuva podatke)",
             ["btn_restore"] = "_Restore iOS-a (BRIŠE sve)...",
             ["btn_backup"] = "_Napravi backup ovog uređaja...",
@@ -196,6 +227,17 @@ namespace UltraIDevice
             ["btn_recovery"] = "_Uđi u recovery mod",
             ["btn_exit_recovery"] = "I_zađi iz recovery / DFU moda",
             ["btn_dfu"] = "Vođeni _DFU mod...",
+            ["btn_files"] = "Fajlovi na uređaju...",
+            ["btn_trust"] = "Upari / Veruj",
+            ["btn_rename"] = "Preimenuj uređaj...",
+            ["btn_restart"] = "Restartuj uređaj",
+            ["btn_shutdown"] = "Isključi uređaj",
+            ["btn_vo_on"] = "Uključi VoiceOver",
+            ["btn_vo_off"] = "Isključi VoiceOver",
+            ["btn_apps"] = "Aplikacije na uređaju...",
+            ["btn_syslog"] = "Log uređaja...",
+            ["btn_crash"] = "Izvezi crash logove...",
+            ["btn_activate"] = "Aktiviraj uređaj",
             ["btn_cancel"] = "_Otkaži",
 
             ["progress_idle"] = "Spremno.",
@@ -242,6 +284,20 @@ namespace UltraIDevice
 
             ["about_title"] = "O programu Ultra iDevice",
             ["shortcuts_title"] = "Prečice na tastaturi",
+
+            // Nazivi faza tokom restore/update-a (DeviceEngine šalje stabilan ključ).
+            ["phase_download"] = "Preuzimanje iOS-a",
+            ["phase_verify"] = "Provera firmvera",
+            ["phase_prepare"] = "Priprema",
+            ["phase_recovery"] = "Ulazak u recovery mod",
+            ["phase_send"] = "Slanje firmvera na uređaj",
+            ["phase_filesystem"] = "Slanje sistema na uređaj",
+            ["phase_cryptex"] = "Slanje sistema na uređaj",
+            ["phase_flash"] = "Upisivanje firmvera",
+            ["phase_baseband"] = "Ažuriranje modema (baseband)",
+            ["phase_install"] = "Instalacija",
+            ["phase_finishing"] = "Završavanje",
+            ["rebooting_wait"] = "Restore je završen. Uređaj se ponovo pokreće — to može da potraje minut-dva. Sačekaj...",
         };
     }
 }

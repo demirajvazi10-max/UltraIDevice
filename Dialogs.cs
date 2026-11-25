@@ -29,6 +29,62 @@ namespace UltraIDevice
             System.Windows.MessageBox.Show(owner, message, title, MessageBoxButton.OK, MessageBoxImage.Error);
         }
 
+        /// <summary>
+        /// Pristupačan unos jedne linije teksta. Vraća uneti tekst, ili null ako je
+        /// korisnik odustao. Fokus ide na polje; Enter potvrđuje, Esc odustaje.
+        /// </summary>
+        public static string Prompt(Window owner, string title, string label, string initial = "")
+        {
+            bool sr = LanguageManager.Current == "sr";
+            string result = null;
+
+            var win = new Window
+            {
+                Title = title,
+                Owner = owner,
+                Width = 440,
+                SizeToContent = SizeToContent.Height,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                ResizeMode = ResizeMode.NoResize,
+                Background = ThemeBrushes.MainWindowBg,
+                Foreground = ThemeBrushes.TextPrimary,
+            };
+
+            var panel = new StackPanel { Margin = new Thickness(16) };
+
+            var lbl = new Label { Content = label, Foreground = ThemeBrushes.TextPrimary, Padding = new Thickness(0, 0, 0, 4) };
+            panel.Children.Add(lbl);
+
+            var box = new TextBox
+            {
+                Text = initial ?? "",
+                Background = ThemeBrushes.ControlBg,
+                Foreground = ThemeBrushes.TextPrimary,
+                BorderBrush = ThemeBrushes.ThemeBorderBrush,
+                FontSize = 14,
+                Padding = new Thickness(6),
+                Margin = new Thickness(0, 0, 0, 12),
+            };
+            System.Windows.Automation.AutomationProperties.SetLabeledBy(box, lbl);
+            System.Windows.Automation.AutomationProperties.SetName(box, label);
+            panel.Children.Add(box);
+
+            var row = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+            var ok = new Button { Content = sr ? "U redu" : "OK", Padding = new Thickness(16, 6, 16, 6), Margin = new Thickness(0, 0, 8, 0), IsDefault = true };
+            var cancel = new Button { Content = sr ? "Odustani" : "Cancel", Padding = new Thickness(16, 6, 16, 6), IsCancel = true };
+            ok.Click += (s, e) => { result = box.Text; win.Close(); };
+            cancel.Click += (s, e) => { result = null; win.Close(); };
+            row.Children.Add(ok);
+            row.Children.Add(cancel);
+            panel.Children.Add(row);
+
+            win.Content = panel;
+            win.Loaded += (s, e) => { box.Focus(); box.SelectAll(); };
+            UiScaling.Register(win);
+            win.ShowDialog();
+            return result;
+        }
+
         /// <summary>Tematizovan prozor sa dužim, čitljivim tekstom.</summary>
         public static void ShowText(Window owner, string title, string body)
         {

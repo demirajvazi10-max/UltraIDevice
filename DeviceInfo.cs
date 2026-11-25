@@ -22,6 +22,23 @@ namespace UltraIDevice
         public string DeviceName { get; set; } = "";       // ime koje je korisnik dao ("Demirov iPhone")
         public DeviceMode Mode { get; set; } = DeviceMode.None;
 
+        // ── Dodatni podaci za pun izveštaj (pune se tek na zahtev, u GetFullReportAsync) ──
+        public string BuildVersion { get; set; } = "";      // npr. "22A3354"
+        public string ModelNumber { get; set; } = "";       // npr. "MYMА2LL/A"
+        public string RegionInfo { get; set; } = "";
+        public string CpuArchitecture { get; set; } = "";   // arm64e...
+        public string WiFiAddress { get; set; } = "";
+        public string BluetoothAddress { get; set; } = "";
+        public string PhoneNumber { get; set; } = "";
+        public string ActivationState { get; set; } = "";   // Activated / Unactivated...
+        public long StorageTotalBytes { get; set; } = -1;
+        public long StorageFreeBytes { get; set; } = -1;
+        public int BatteryPercent { get; set; } = -1;
+        public bool BatteryCharging { get; set; }
+
+        /// <summary>Bajtove u čitljive gigabajte ("119.0 GB"); prazno ako nepoznato.</summary>
+        public static string Gb(long bytes) => bytes < 0 ? "" : $"{bytes / 1073741824.0:F1} GB";
+
         /// <summary>Lepo ime modela ("iPhone 16 Pro Max") iz ProductType identifikatora.</summary>
         public string FriendlyModel => ModelNames.TryGetValue(ProductType, out var n) ? n : ProductType;
 

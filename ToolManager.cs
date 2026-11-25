@@ -162,6 +162,12 @@ namespace UltraIDevice
         public static async Task InstallToolsAsync(Action<double, string> progress)
         {
             Directory.CreateDirectory(UserToolsDir);
+
+            // Pre raspakivanja ubij sve zaostale procese naših alata (npr. idevicesyslog
+            // koji je ostao da radi kad se log prozor zamrznuo pa je app silom zatvoren) —
+            // inače drže .exe zaključan i ne mogu da se prepišu.
+            await Task.Run(KillRunningToolProcesses);
+
             string source = ResolveSource();
 
             // 1. Lokalni folder sa već raspakovanim alatima -> samo kopiraj .exe/.dll.
@@ -171,9 +177,11 @@ namespace UltraIDevice
                 {
                     foreach (var f in Directory.EnumerateFiles(source, "*.*", SearchOption.AllDirectories))
                     {
-                        if (f.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
-                            || f.EndsWith(".dll", StringComparison.OrdinalIgnoreCase))
-                            File.Copy(f, Path.Combine(UserToolsDir, Path.GetFileName(f)), overwrite: true);
+                        if (!(f.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
+                              || f.EndsWith(".dll", StringComparison.OrdinalIgnoreCase))) continue;
+                        try { File.Copy(f, Path.Combine(UserToolsDir, Path.GetFileName(f)), overwrite: true); }
+                        catch (IOException) { }                  // zauzet fajl -> preskoči
+                        catch (UnauthorizedAccessException) { }
                     }
                 });
                 progress?.Invoke(100, "");
@@ -221,6 +229,52 @@ namespace UltraIDevice
             finally { try { File.Delete(zip); } catch { } }
         }
 
+        // Imena procesa naših alata (bez .exe).
+        private static readonly string[] ToolProcessNames =
+        {
+            "idevice_id", "ideviceinfo", "idevicerestore", "irecovery", "ideviceenterrecovery",
+            "idevicebackup2", "idevicediagnostics", "idevicepair", "idevicename", "afcclient",
+            "ideviceinstaller", "idevicesyslog", "idevicecrashreport", "ideviceactivation",
+            "ideviceaccessibility", "plistutil"
+        };
+
+        /// <summary>
+        /// Ubija pokrenute procese naših alata (pre svega one iz našeg tools foldera),
+        /// da bi .exe fajlovi bili slobodni za prepisivanje. Ne dira tuđe procese kad
+        /// može da pročita putanju; ako putanju ne može (čest slučaj), ime je ionako
+        /// iz naše uske liste, pa je bezbedno.
+        /// </summary>
+        private static void KillRunningToolProcesses()
+        {
+            string dir;
+            try { dir = Path.GetFullPath(UserToolsDir).TrimEnd('\\'); } catch { dir = UserToolsDir; }
+
+            foreach (var name in ToolProcessNames)
+            {
+                Process[] procs;
+                try { procs = Process.GetProcessesByName(name); }
+                catch { continue; }
+
+                foreach (var p in procs)
+                {
+                    try
+                    {
+                        string path = null;
+                        try { path = p.MainModule?.FileName; } catch { /* nema pristupa putanji */ }
+
+                        bool ours = path != null && path.StartsWith(dir, StringComparison.OrdinalIgnoreCase);
+                        if (ours || path == null)
+                        {
+                            p.Kill(entireProcessTree: true);
+                            p.WaitForExit(3000);
+                        }
+                    }
+                    catch { }
+                    finally { try { p.Dispose(); } catch { } }
+                }
+            }
+        }
+
         private static void ExtractToolsZip(string zipPath)
         {
             using var archive = ZipFile.OpenRead(zipPath);
@@ -231,7 +285,16 @@ namespace UltraIDevice
                 if (!(name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
                       || name.EndsWith(".dll", StringComparison.OrdinalIgnoreCase))) continue;
                 // Ravno u tools folder, bez obzira na strukturu u zip-u.
-                entry.ExtractToFile(Path.Combine(UserToolsDir, name), overwrite: true);
+                try
+                {
+                    entry.ExtractToFile(Path.Combine(UserToolsDir, name), overwrite: true);
+                }
+                catch (IOException)
+                {
+                    // Fajl je trenutno zauzet (aplikacija ga baš pokreće radi detekcije).
+                    // Isti je kao onaj u zip-u, pa preskakanje ne menja ishod.
+                }
+                catch (UnauthorizedAccessException) { }
             }
         }
     }

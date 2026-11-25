@@ -20,6 +20,24 @@ namespace UltraIDevice
             public string Sr;
         }
 
+        /// <summary>
+        /// Objašnjenje na osnovu TEKSTA greške (kad nema broja koda) + rezerva na kod.
+        /// Prepoznaje poznate tekstualne greške idevicerestore-a, npr. „preboard manifest".
+        /// </summary>
+        public static string ExplainMessage(string message, int? code, string lang)
+        {
+            string m = (message ?? "").ToLowerInvariant();
+            bool sr = lang == "sr";
+
+            // Vrlo nov iOS: alat ne ume da napravi "preboard" manifest za Update (čuvanje podataka).
+            if (m.Contains("preboard") || m.Contains("unhandled component") || m.Contains("create_local_manifest"))
+                return sr
+                    ? "Update (čuvanje podataka) nije uspeo jer ova verzija alata ne ume da napravi 'preboard' manifest za vrlo nov iOS (novi delovi u manifestu). To je ograničenje samog alata idevicerestore, ne aplikacije.\n\nRešenje: koristi 'Restore iOS (briše sve)' — taj put ne prolazi kroz preboard i radi. Za servis (zaboravljena šifra, reinstalacija) ionako ti treba Restore koji briše."
+                    : "Update (keeping data) failed because this tool version can't build the \"preboard\" manifest for a very new iOS (new manifest components). This is a limitation of idevicerestore itself, not the app.\n\nFix: use \"Restore iOS (erases everything)\" — that path skips preboard and works. For service (forgotten passcode, reinstall) you need the erasing Restore anyway.";
+
+            return Explain(code, lang);
+        }
+
         /// <summary>Objašnjenje za kod, na trenutnom jeziku. Nikad null.</summary>
         public static string Explain(int? code, string lang)
         {

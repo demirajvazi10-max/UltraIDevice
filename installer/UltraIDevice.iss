@@ -5,7 +5,7 @@
 
 #define MyAppName "Ultra iDevice"
 #ifndef MyAppVersion
-  #define MyAppVersion "1.0.0"
+  #define MyAppVersion "2.0.1"
 #endif
 #define MyAppPublisher "Demir Ajvazi"
 #define MyAppExeName "UltraIDevice.exe"

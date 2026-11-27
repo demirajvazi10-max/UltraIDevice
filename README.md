@@ -4,6 +4,8 @@
 
 **Version 2.0.0**
 
+[![Ultra iDevice on AlternativeTo](https://alternativeto.net/static/badges/badge-compact-color.svg)](https://alternativeto.net/software/ultra-idevice/about/)
+
 ---
 
 ## What is this?
